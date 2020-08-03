@@ -1,4 +1,13 @@
-## ----setup, include=FALSE----------------------------------------------------------------------------------------------
+---
+title: "RHICCA Data Merge"
+author: "Olivia Swarthout"
+date: "July 31, 2020"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 rm(list = ls())
 library(tidyverse)
@@ -11,9 +20,9 @@ library(kableExtra)
 mydir <- "RHICCA/FOLLOWUP_6MONTHS"
 
 
-
-
-## ----fileprep, include=FALSE-------------------------------------------------------------------------------------------
+```
+This is an R Script to merge Luminex data tables from the RHICCA Project into a single table for each timepoint at which samples were collected. The code accounts for the potential of small variations in the naming of spreadsheets and their columns, but does need the input sheets to have all columns in the same order, and to include "plate x" (x being the relevant plate number) somewhere in their file paths. Files need to be stored as .csv
+```{r fileprep, include=FALSE}
 
 # read in .txt file of uncertain IDs as list
 uncertain <- scan("C:\\Users\\Olivia Swarthout\\Desktop\\uncertain_6months.txt", what = character(), sep = ",")
@@ -30,14 +39,21 @@ merged <- data.frame("SampleID"=character(), "PlateID" = character(), "CD163" = 
 # get rid of "questionable results"
 plates <- Filter(function(x) !any(grepl("Questionable", x)), plates)
 
+```
 
 
-## ----plates, echo=FALSE------------------------------------------------------------------------------------------------
+
+### Plates  
+Below is the list of plates read in by the code, excluding those labelled as "questionable results" and those plates for which a repeat was later run. Issues with this list (plates missing or included when they should not be) may arise from inconsistencies in the naming of files and folders.
+
+```{r plates, echo=FALSE}
 print(plates)
 
+```
 
+Reading and merging the data now
 
-## ----merge-------------------------------------------------------------------------------------------------------------
+```{r merge}
 
  for (x in plates[1:22]){
   current <- read.csv(x)
@@ -70,14 +86,17 @@ print(plates)
   
   merged <- bind_rows(merged, current)
  }
+```
+ 
+### QC Rows
+Removing rows with QC IDs, which exist for quality control purposes
 
-
-## ----QC----------------------------------------------------------------------------------------------------------------
+```{r QC}
 s <- which(merged$SampleID == "QC 1"| merged$SampleID == "QC 2" | merged$SampleID == "QC1"|merged$SampleID == "QC2")
 merged <- merged[-s,]
+```
 
-
-## ----uncertain---------------------------------------------------------------------------------------------------------
+```{r uncertain}
 #flag IDs that were in red text (i.e. validity is uncertain)
 #add a metadata column if one does not already exist
 if(ncol(merged)<8){
@@ -86,9 +105,12 @@ if(ncol(merged)<8){
 p <- which(!is.na(match(merged$SampleID, uncertain)) | merged$SampleID == "")
 merged$metadata[p] <- "uncertain/missing ID"
 
+```
 
+### Samples that fall on detection limit
 
-## ----onlimit-----------------------------------------------------------------------------------------------------------
+Before it looks for the samples that fall above or below the detection limit, this program looks for samples that fall exactly on the limit, and prints them out if any exist.  
+```{r onlimit}
 t <- grep("(?<!<\\ )2.44140625", merged$ILb, perl = TRUE, value = FALSE)
 if(length(t)==0){
   print("No ILb values lie on the lower detection limit")
@@ -125,9 +147,16 @@ if(length(y)==0){
   merged[y,]
 }
 
+```
 
 
-## ----imputelimits------------------------------------------------------------------------------------------------------
+### Samples above and below detection limits
+ The number of samples out of the total that do not fall within that range of detection are printed below. 
+ For each of the four biomarkers, a column is created in the spreadsheet
+ 
+ Their values are then set to that
+
+```{r imputelimits}
 
 a <-  grepl("<",merged$CD163)
 merged$CD163Limit[a] <- "below"
@@ -156,18 +185,28 @@ merged$IL6[e] <- 2.44140625
 
 merged[merged == "N/A"] <- NA
 
+```
 
 
-## ----asnumeric---------------------------------------------------------------------------------------------------------
+Converting biomarker columns to type numeric
+```{r asnumeric}
 #converts all biomarker values to type numeric
 merged$CD163 <- as.numeric(merged$CD163, na.rm = TRUE)
 merged$ICAM1 <- as.numeric(merged$ICAM1, na.rm = TRUE)
 merged$IL6 <- as.numeric(merged$IL6, na.rm=TRUE)
 merged$ILb <- as.numeric(merged$ILb, na.rm=TRUE)
 
+```
 
+### Duplicated Patient IDs
 
-## ----findduplicates----------------------------------------------------------------------------------------------------
+All duplicated IDs and their frequencies printed below. 
+
+Number of missing IDs printed separately
+
+If a duplicated ID is from a plate in a "REPEATS" folder, the original is removed from the data frame.
+
+```{r findduplicates}
 #find number of missing sample IDs
 missing <- sum(merged$SampleID == "")
 cat(missing, "samples have missing ID")
@@ -181,9 +220,11 @@ duplicates <- n_occur[n_occur$Freq > 1,]
 duplicates$Var1 <- factor(duplicates$Var1)
   kable(duplicates, caption = "Sample IDs With More Than One Occurrence") %>%
   kable_styling()
+```
 
+Removing duplicate IDs
 
-## ----removeduplicates--------------------------------------------------------------------------------------------------
+```{r removeduplicates}
 
 #find plate IDs of repeat plates, reconstruct timepoint identifier
 repeats <- grep("REPEATS", plates, value = TRUE)
@@ -214,17 +255,29 @@ for (item in duplicates$Var1){
 }
 }
 
+```
 
 
-## ----------------------------------------------------------------------------------------------------------------------
+The beginning of the table of merged data can be found below. If the program runs correctly, 12 columns should be shown, representing:
+
+* Sample ID
+* Plate ID
+* The four biomarkers
+* Timepoint
+* Metadata (e.g. missing/uncertain)
+* An indicator variable for each biomarker stating "above" if the value is above the limit of detection and "below" if below (NA if neither)
+
+
+```{r}
 kable(head(merged)) %>%
   kable_styling()
-
-
-## ----------------------------------------------------------------------------------------------------------------------
+```
+Saving spreadsheet of all merged data as .csv in timepoint folder (can change where it saves)
+```{r}
 filepath <- paste(time, "_MERGED.csv", sep="")
 write.csv(merged, filepath, row.names = FALSE)
 
 cat(filepath, "with", nrow(merged), "lines of data created in working directory")
 
+```
 
