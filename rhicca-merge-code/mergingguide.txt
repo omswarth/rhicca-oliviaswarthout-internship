@@ -1,0 +1,29 @@
+////////////////////////////////////////////////////////////////
+////// INFO ON HOW TO USE THE RHICCA DATA MERGING SCRIPT ///////
+////////////////////////////////////////////////////////////////
+
+Hi! This is an R script created for the RHICCA project
+
+The code reads in spreadsheets of data from Luminex assay analysis and merges them into one spreadsheet for each timepoint in the longitudinal study.
+
+
+Successful reading of data necessitates the following: 
+
+-that the spreadsheets are stored as .csv files
+-that all spreadsheets make reference somewhere in their file name or directory to their plate number (case insensitive)
+-that data from each timepoint is stored in a folder titled as such, which is stored in a folder titled "RHICCA" (the variable "mydir" in the setup chunk requires this, as does
+ the variable "time" in the merge chunk, which sets the timepoint for the data to the sub-directory directly inside of the RHICCA folder
+ -a path to a .txt file containing a list of sample IDs (separated by spaces) which are incertain or potentially invalid
+ 
+ 
+ Before reading in data:
+ 
+ Apart from making sure the necessary packages are installed, the variables "mydir" and "uncertain" within the "setup" chunk should be set to the locations of the RHICCA folder and the 
+ list of uncertain sample IDs, respectively. No other changes to the code should be necessary.
+ 
+ 
+ The output will be in the form of a .csv file saved to the working directory, and, if the .Rmd is run, an HTML file detailing steps taken by the code to process the data as well as 
+ potential issues with the spreadsheets. 
+ 
+ If you are having issues running the code or have any other questions don't hesitate to contact me at swarthout.olivia@gmail.com!
+ Good luck!
