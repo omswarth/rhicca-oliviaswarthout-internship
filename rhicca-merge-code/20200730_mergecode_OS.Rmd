@@ -76,8 +76,9 @@ Reading and merging the data now
   #take just plate number from subdirectory name, store in plate ID column
   platenum <- gsub(platenum, pattern = "PLATE ", replacement = "")
   
-  #get the second element of the path (to get timepoint)
-  time <- (strsplit(x, "\\/"))[[1]][2]
+  #get the element of the path that follows the main RHICCA folder (to get timepoint)
+  time <- str_extract(x, "RHICCA\\/(\\d|\\w|_)*" )
+  time <- gsub(time, pattern = "RHICCA/", replacement = "")
   
   current$PlateID <- paste(time, platenum, sep = "_")
   
