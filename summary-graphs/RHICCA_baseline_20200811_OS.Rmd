@@ -1,0 +1,365 @@
+---
+title: "RHICCA Baseline Analysis"
+date: "10 August 2020"
+output: pdf_document
+---
+
+ 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, fig.height=4, fig.width=8, message=FALSE)
+rm(list = ls())
+library(ggplot2)
+library(dplyr)
+library(arsenal)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+require(scales)
+
+base <- read.csv("C:\\Users\\Olivia Swarthout\\Desktop\\BASELINE_MERGED.csv")
+load("C:/Users/Olivia Swarthout/Desktop/base6m12mDat20200730.RData")
+```
+
+```{r reformatdata}
+#combine merged data with relevant columns from clinical data so we can group by gender, art status, etc
+clinicalData <- select(base6m12mDat, pid, ptype, age, age_group, gender)
+baseData <- merge(base, clinicalData, by.x = c("SampleID"), by.y = c("pid"))
+#reorder levels so control is not hidden by patient
+baseData$ptype <- relevel(baseData$ptype, "Patient")
+baseData$gender <- relevel(baseData$gender, "Male")
+
+#separate by art status
+patientIDs <- base6m12mDat$pid[base6m12mDat$ptype == "Patient"]
+patient <- baseData[baseData$SampleID %in% patientIDs,]
+controlIDs <- base6m12mDat$pid[base6m12mDat$ptype == "Control"]
+control <- baseData[baseData$SampleID %in% controlIDs,]
+
+```
+
+```{r functions}
+#function to create a histogram
+histFun <- function(dat, var, groupVar, xLim, xLab = "", title=NA, lowLimit=0, upLimit=0, lowAlpha=0, upAlpha=0, lowBarAlpha=0, upBarAlpha=0, bin=30, colors=c("grey", "#00AFBB", "#E7B800")){
+  ggplot()+
+  geom_histogram(data=dat, mapping=aes(x=dat[,var], color="ALL", fill="All"), bins=bin) +
+  geom_histogram(data=dat, aes(x=dat[,var], color=dat[,groupVar], fill=dat[,groupVar]), position = "identity", bins=bin, alpha=0.6)+
+  geom_vline(aes(xintercept = lowLimit), color="red", size=0.5, alpha=lowAlpha) +
+  geom_rect(aes(xmin=-Inf,xmax= lowLimit, ymin=0,ymax=Inf),alpha=lowBarAlpha,fill="red") +
+  geom_vline(aes(xintercept = upLimit), color="red", size=0.5, alpha=upAlpha) +
+  geom_rect(aes(xmin=upLimit,xmax= Inf, ymin=0,ymax=Inf),alpha=upBarAlpha,fill="red") +
+  scale_color_manual(guide=FALSE, values = colors) +
+  scale_fill_manual(" ",values = colors)+
+  xlab(xLab) +
+  scale_x_continuous(labels = comma, limits = xLim)+
+  theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+        panel.background = element_rect(fill = "white"),
+        legend.key.size = unit(0.03, "npc"),
+        legend.position = "top")
+}
+
+violinFun<-function(dat,var,groupVar,yLim, yLab=NULL,labels=NULL,title=NA,fontSize=10,colors=c("#E7B800", "#00AFBB")){
+  if(is.null(labels)){labels<-levels(dat[,groupVar])}
+  if(is.null(yLab)){yLab<-var}
+  
+  ggplot(data=dat,mapping=aes(x=get(groupVar),y=get(var),fill=get(groupVar))) +
+    geom_violin(show.legend=F) +
+    scale_fill_manual(values=colors) +
+    geom_boxplot(width=0.05, fill="white") +
+    xlab("") +
+    ylab(yLab) +
+    theme_pubclean(base_size=fontSize) +
+    scale_x_discrete(breaks=levels(dat[,groupVar]),labels=labels)+
+    scale_y_continuous(labels = comma, limits = yLim)
+}
+
+printPlots <- function(a, b){
+  
+vp.Right<-viewport(height=unit(1, "npc"), width=unit(0.5, "npc"),just=c("left","top"),y=1, x=0.5)
+vp.Left<-viewport(height=unit(1, "npc"), width=unit(0.5, "npc"),just=c("left","top"),y=1, x=0)
+
+print(a, vp=vp.Left)
+print(b, vp=vp.Right)
+}
+
+facetsFun <- function(dat, var, groupVar, xLim, facets, colors=c("grey", "#00AFBB", "#E7B800"), xLab=""){
+  ggplot()+
+  geom_histogram(data=dat, mapping=aes(x=dat[,var], color="ALL", fill="All")) +
+  geom_histogram(data=dat, aes(x=dat[,var], color=dat[,groupVar], fill=dat[,groupVar]), position = "identity",   alpha=0.6)+
+  scale_x_continuous( limits = xLim)+
+  xlab(xLab) +
+  scale_color_manual(guide=FALSE, values = colors) +
+  scale_fill_manual(" ",values = colors)+
+    theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"),
+          legend.position = "top")+
+  facet_wrap(~ dat[,facets])
+}
+
+
+
+
+```
+
+### RHICCA Baseline Data: Visual Summary
+
+This document contains graphs and charts showing the RHICCA data collected at baseline, including each of the four biomarkers and how they may vary depending on ART status, gender, and age. Of the 827 samples in the baseline data, 766 could be successfully matched with clinical data, though some errors and outliers may still be present.
+
+The data for each biomarker is either left-censored, right-censored, or both, due to the detection limits imposed by the Luminex Assay. Regions outside of these limits are shaded in red in the histograms, although there is still some viable data within these regions.
+
+
+\newpage
+### ICAM1: ART vs Control
+Some extreme values have been left off of the histograms below, as the significant skew of the data makes an informative histogram more difficult to construct. The violin plots, however, contain all values of the data. We see that overall, the shapes of the ICAM1 distributions for ART and Control subjects look similar, although most extreme values belong to the ART patients. 
+
+The upper detection limit of 250 000 results in a vertical bar on the x-axis where values listed as ">250 000" were imputed to that limit
+
+```{r ICAM onlyART}
+a<-histFun(dat=baseData, var="ICAM1", groupVar = "ptype", xLab = "ICAM1 (pg/ml)", xLim = c(0, 500000), lowLimit = 61.03516, upLimit = 250000, lowAlpha = 0.4, upAlpha = 0.4, lowBarAlpha = 0.1, upBarAlpha = 0.1)
+b <- violinFun(dat = baseData, var="ICAM1", groupVar = "ptype", yLab = "ICAM1 (pg/ml)", yLim=c(0, max(baseData$ICAM1)))
+
+printPlots(a,b)
+
+```
+\newpage
+
+### ICAM1: Sex
+
+The data, when separated by ART status and gender, do not seem to show significant differences in distribution, although male ART patients do seem to experience a somewhat greater increase in ICAM1 levels compared to control subjects than women do.
+
+```{r ICAM histbySex}
+
+a <- histFun(dat=patient, var="ICAM1", groupVar = "gender", xLab = "ICAM1 (pg/ml)", xLim = c(0, 500000), lowLimit = 61.03516, upLimit = 250000, lowAlpha = 0.4, upAlpha = 0.4, lowBarAlpha = 0.1, upBarAlpha = 0.1)+
+  ggtitle("ICAM1 (ART Group)")
+
+
+c <- histFun(dat=control, var="ICAM1", groupVar = "gender", xLab = "ICAM1 (pg/ml)", xLim = c(0, 500000), lowLimit = 61.03516, upLimit = 250000, lowAlpha = 0.4, upAlpha = 0.4, lowBarAlpha = 0.1, upBarAlpha = 0.1)+
+  ggtitle("ICAM1 (Control Group)")
+
+
+printPlots(a, c)
+
+
+```
+
+
+
+
+```{r ICAM violinbySex}
+
+b <- violinFun(dat = patient, var = "ICAM1", groupVar = "gender", yLim = c(0, 1200000), yLab = "ICAM1 (pg/ml)")+
+  ggtitle("ICAM1 (ART Group)")
+
+d <- violinFun(dat = control, var = "ICAM1", groupVar = "gender", yLim = c(0, 1200000), yLab = "ICAM1 (pg/ml)")+
+  ggtitle("ICAM1 (Control Group)")
+
+
+printPlots(b,d)
+```
+\newpage
+
+### ICAM1: Age
+Separating by age group does not seem to show significant differences in distribution
+
+```{r icamage, fig.asp=1}
+
+facetsFun(dat=baseData, var="ICAM1", groupVar = "ptype", facets="age_group", xLim = c(0,500000), xLab="ICAM1 (pg/ml)" )
+  
+
+
+```
+
+
+\newpage
+
+
+
+### CD163: ART vs Control
+Once again, some extreme values have been excluded from the histogram. We see perhaps a slight tendency toward higher CD163 values in the ART patients but no strong evidence of a difference in distribution between the ART and control subjects.
+
+Only a handful of values lie outside the detection limits.
+
+```{r CD163 onlyART, fig.align="left"}
+a <- histFun(dat=baseData, var="CD163", groupVar = "ptype", xLab="CD163 (ng/ml)", xLim=c(0, 500), lowLimit =  0.2441406, upLimit = 1000, lowAlpha = 0.4, upAlpha = 0.4, lowBarAlpha = 0.1, upBarAlpha = 0.1)
+
+b <- violinFun(dat=baseData, var = "CD163", groupVar = "ptype", yLim = c(0, max(baseData$CD163)), yLab = "CD163 (ng/ml)")
+
+printPlots(a,b)
+
+```   
+\newpage
+### CD163: Sex
+
+The data, when separated by ART status and gender, do not seem to show significant differences in distribution, although once again we see that male subjects are responsible for most of the recorded increase in CD163 levels that ART patients experienced. 
+
+```{r CD163 histbySex}
+
+a <- histFun(dat=patient, var="CD163", groupVar = "gender", xLab="CD163 (ng/ml)", xLim=c(0, 500), lowLimit =  0.2441406, upLimit = 1000, lowAlpha = 0.4, upAlpha = 0.4, lowBarAlpha = 0.1, upBarAlpha = 0.1)+
+  ggtitle("CD163 (ART Group)")
+
+
+c <- histFun(dat=control, var="CD163", groupVar = "gender", xLab="CD163 (ng/ml)", xLim=c(0, 500), lowLimit =  0.2441406, upLimit = 1000, lowAlpha = 0.4, upAlpha = 0.4, lowBarAlpha = 0.1, upBarAlpha = 0.1)+
+  ggtitle("CD163 (Control Group)")
+
+
+printPlots(a, c)
+
+
+```
+
+```{r CD163 violinbySex}
+
+b <- violinFun(dat = patient, var = "CD163", groupVar = "gender", yLim =  c(0, max(baseData$CD163)), yLab = "CD163 (ng/ml)")+
+  ggtitle("CD163 (ART Group)")
+
+d <- violinFun(dat = control, var = "CD163", groupVar = "gender", yLim =  c(0, max(baseData$CD163)), yLab = "CD163 (ng/ml)")+
+  ggtitle("CD163 (Control Group)")
+
+
+printPlots(b,d)
+```
+
+\newpage
+
+### CD163: Age
+There does not appear to be a difference in distributions between age groups
+
+```{r cd163age, fig.asp=1}
+
+facetsFun(dat=baseData, var="CD163", groupVar = "ptype", facets="age_group", xLim = c(0,500), xLab="CD163 (ng/ml)" )
+
+```
+
+\newpage
+
+### ILb: ART vs Control
+Two extreme values have been excluded from the histogram, including one very high value of 131828.8 pg/ml that has also been excluded from the violin plot. Waiting on information from Dumisani and Dumizulu about the validity of this measurement but as it is identical to the ICAM1 value from the same row and the rest of the ILb measurements fall between 0 and 7 pg/ml, it seemed likely to be an error and thus counterproductive to include it in any plots for the time being.
+
+We see that the charts are dominated by a large peak at x=2.44140625, the lower detection limit for this biomarker, as a result of the fact that 507 out of 766 values (about 2/3 of the data) were given as "<2.44140625". The vast majority of the remaining values actually fall below the lower detection limit as well, although these can be presumed to still be valid.
+
+The relatively small number of non-censored observations makes discerning patterns in the distributions difficult, but the distributions for ART and control patients do seem similar.
+ 
+```{r ilb onlyART}
+a <- histFun(dat=baseData, var="ILb", groupVar = "ptype", xLab="ILb (pg/ml)", xLim=c(0, 5), lowLimit =  2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)
+a
+b <- violinFun(dat=baseData, var = "ILb", groupVar = "ptype", yLim = c(0, 7), yLab = "ILb (pg/ml)")
+
+printPlots(a,b)
+```
+
+a closer look: 
+
+```{r, fig.height=3, fig.width=6}
+histFun(dat=baseData, var="ILb", groupVar = "ptype", xLab="ILb (pg/ml)", xLim=c(0, 2.4), lowLimit =  2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)
+
+```
+
+\newpage
+
+### ILb: Sex
+The data, when separated by ART status and gender, do not seem to show significant differences in distribution.
+
+
+```{r ILb histbySex}
+
+a <- histFun(dat=patient, var="ILb", groupVar = "gender", xLab = "ILb (pg/ml)", xLim = c(0, 5), lowLimit = 2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)+
+  ggtitle("ILb (ART Group)")
+
+
+c <- histFun(dat=control, var="ILb", groupVar = "gender", xLab = "ILb (pg/ml)", xLim = c(0, 5), lowLimit = 2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)+
+  ggtitle("ILb (Control Group)")
+
+printPlots(a, c)
+
+
+```
+
+```{r ILb violinbySex}
+
+b <- violinFun(dat = patient, var = "ILb", groupVar = "gender", yLim = c(0, 7), yLab =  "ILb (pg/ml)")+
+  ggtitle("ILb (ART Group)")
+
+d <- violinFun(dat = control, var = "ILb", groupVar = "gender", yLim = c(0, 7), yLab =  "ILb (pg/ml)")+
+  ggtitle("ILb (Control Group)")
+
+
+printPlots(b,d)
+```
+
+\newpage
+
+### ILb: Age
+Separating by age group does not seem to show significant differences in distributions
+
+```{r ilbage, fig.asp=1}
+
+facetsFun(dat=baseData, var="ILb", groupVar = "ptype", facets="age_group", xLim = c(0,4), xLab="ILb (pg/ml)" )
+
+```
+\newpage
+
+### IL6: ART vs Control
+Once again, a number of extreme values have been removed from the histogram. Most of the data lies below 30 pg/ml, with the third quartile value being 4.0689, although the highest values are in the hundreds. This makes a complete violin plot difficult to interpret, but these extreme values do not seem to be errors, but rather high values from a right-skewed distribution. Therefore, a truncated and non-truncated version of both the histogram and violin plots are shown below
+
+Although both distributions are right-skewed, we see distinctly higher values for ART patients than we do for control subjects.
+
+Non-truncated:
+
+```{r il6 onlyART}
+a <- histFun(dat=baseData, var="IL6", groupVar = "ptype", xLab="IL6 (pg/ml)", xLim=c(0, max(baseData$IL6)), lowLimit =  2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)
+
+b <- violinFun(dat=baseData, var = "IL6", groupVar = "ptype", yLim = c(0, max(baseData$IL6)), yLab = "IL6 (pg/ml)")
+
+printPlots(a,b)
+```
+
+Truncated:
+
+```{r il6trunc}
+a <- histFun(dat=baseData, var="IL6", groupVar = "ptype", xLab="IL6 (pg/ml)", xLim=c(0, 30), lowLimit =  2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)
+
+b <- violinFun(dat=baseData, var = "IL6", groupVar = "ptype", yLim = c(0, 30), yLab = "IL6 (pg/ml)")
+  
+printPlots(a,b)
+```
+
+
+### IL6: Sex
+
+We see both genders experiencing significantly higher IL6 levels among ART patients than among control subjects, though the graphs don't seem to show a difference between genders.
+
+```{r IL6 histbySex}
+
+a <- histFun(dat=patient, var="IL6", groupVar = "gender", xLab = "IL6 (pg/ml)", xLim = c(0, 30), lowLimit = 2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)+
+  ggtitle("IL6 (ART Group)")
+
+
+c <- histFun(dat=control, var="IL6", groupVar = "gender", xLab = "IL6 (pg/ml)", xLim = c(0, 30), lowLimit = 2.44140625, lowAlpha = 0.4, lowBarAlpha = 0.1)+
+  ggtitle("IL6 (control Group)")
+
+printPlots(a, c)
+```
+
+```{r IL6 violinbySex}
+
+b <- violinFun(dat = patient, var = "IL6", groupVar = "gender", yLim = c(0, 30), yLab =  "IL6 (pg/ml)")+
+  ggtitle("IL6 (ART Group)")
+
+d <- violinFun(dat = control, var = "IL6", groupVar = "gender", yLim = c(0, 30), yLab =  "IL6 (pg/ml)")+
+  ggtitle("IL6 (Control Group)")
+
+
+printPlots(b,d)
+```
+
+\newpage
+
+### IL6: Age
+Separating by age group does not seem to show significant differences in distribution
+
+```{r il6age, fig.asp=1}
+
+facetsFun(dat=baseData, var="IL6", groupVar = "ptype", facets="age_group", xLim = c(0,30), xLab="IL6 (pg/ml)" )
+
+```
+
