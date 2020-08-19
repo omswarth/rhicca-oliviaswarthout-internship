@@ -146,7 +146,7 @@ cat(sum(c, na.rm = TRUE), "samples out of", nrow(merged), "have ICAM1 levels abo
 merged$ICAM1[c] <- 250000
 
 d <- grepl("<",merged$ILb)
-merged$ILblimit[d] <- "below"
+merged$ILbLimit[d] <- "below"
 cat(sum(d, na.rm = TRUE), "samples out of", nrow(merged), "have ILb levels below detection limit")
 merged$ILb[d] <- 2.44140625
 
