@@ -1,0 +1,164 @@
+---
+title: "RHICCA Baseline table"
+date: "10 August 2020"
+output: pdf_document
+---
+
+ 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+library(kableExtra)
+library(knitr)
+library(dplyr)
+library(ggpubr)
+library(tinytex)
+library(mixdist)
+library(survival)
+library(broom)
+library(scales)
+library(lognorm)
+
+options(scipen=999)
+
+base <- read.csv("C:\\Users\\Olivia Swarthout\\Desktop\\BASELINE_MERGED.csv")
+load("C:/Users/Olivia Swarthout/Desktop/base6m12mDat20200730.RData")
+clinicalData <- select(base6m12mDat, pid, ptype, age, age_group, gender, pwv_base, pwv_6m, pwv_12m,cimt)
+baseData <- merge(base, clinicalData, by.x = c("SampleID"), by.y = c("pid"))
+
+baseData$ICAM1cens <- ifelse(is.na(baseData$ICAM1Limit), TRUE, FALSE)
+baseData$CD163cens <- ifelse(is.na(baseData$CD163Limit), TRUE, FALSE)
+baseData$ILbcens <- ifelse(is.na(baseData$ILbLimit), TRUE, FALSE)
+baseData$IL6cens <- ifelse(is.na(baseData$IL6Limit), TRUE, FALSE)
+```
+
+```{r functions, include=TRUE}
+
+baseTable<-data.frame(
+  varName=c(rep("ICAM1",5), rep("CD163",5), rep("ILb",5), rep("IL6",5)),
+  statName=NA,
+  all_statCol1=NA,
+  all_statCol2=NA,
+  all_statCol3=NA,
+  ctrl_statCol1=NA,
+  ctrl_statCol2=NA,
+  ctrl_statCol3=NA,
+  hiv_statCol1=NA,
+  hiv_statCol2=NA,
+  hiv_statCol3=NA,
+  p=NA,
+stringsAsFactors=F)
+
+#2 sample t test function
+t.test2 <- function(m1,m2,s1,s2,n1,n2,equal.variance=FALSE)
+{
+  if( equal.variance==FALSE ) 
+  {
+    se <- sqrt( (s1^2/n1) + (s2^2/n2) )
+    # welch-satterthwaite df
+    df <- ( (s1^2/n1 + s2^2/n2)^2 )/( (s1^2/n1)^2/(n1-1) + (s2^2/n2)^2/(n2-1) )
+  } else
+  {
+    # pooled standard deviation, scaled by the sample sizes
+    se <- sqrt( (1/n1 + 1/n2) * ((n1-1)*s1^2 + (n2-1)*s2^2)/(n1+n2-2) ) 
+    df <- n1+n2-2
+  }      
+  t <- (m1-m2)/se 
+  dat <- 2*pt(-abs(t),df)
+  return(dat) 
+}
+
+summaryStats <- function(dat,var,censvar,censdir,groupVar,dist){
+  overall <- survreg(Surv(dat[,var], dat[,censvar], type=censdir)~1, dist=dist)
+  
+  group1 <- survreg(Surv(dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),][,var],  
+                        dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),][,censvar], 
+                        type=censdir)~1, dist=dist)
+  
+  group2 <- survreg(Surv(dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),][,var],  
+                        dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),][,censvar], 
+                        type=censdir)~1, dist=dist)
+  
+  overallstats <- getLognormMoments(summary(overall)$coefficients, summary(overall)$scale)
+  group1stats <- getLognormMoments(summary(group1)$coefficients, summary(group1)$scale) 
+  group2stats <- getLognormMoments(summary(group2)$coefficients, summary(group2)$scale)
+
+  group1num <- as.numeric(table(dat[,groupVar])[1])
+  group2num <- as.numeric(table(dat[,groupVar])[2])
+  group1cens <- table(baseData[,censvar][which(baseData[,groupVar]==levels(dat[,groupVar])[1])])[1]
+  group2cens <- table(baseData[,censvar][which(baseData[,groupVar]==levels(dat[,groupVar])[2])])[1]
+
+  
+n <- c(summary(overall)$n, " ", percent(summary(overall)$n/948), summary(group2)$n, "",
+       percent(summary(group2)$n/sum(base6m12mDat[,groupVar]==levels(dat[,groupVar])[2])), summary(group1)$n,
+       "", percent(summary(group1)$n/sum(base6m12mDat[,groupVar]==levels(dat[,groupVar])[1])), "")
+
+cens <- c(as.numeric(table(dat[,censvar])[1]), "",
+          percent(as.numeric(table(dat[,censvar])[1])/summary(overall)$n), group2cens, "",
+          percent(group2cens/group2num), group1cens, "", percent(group1cens/group1num), "")
+
+
+pvalueMean <- t.test2(m1=group2stats[1], m2=group1stats[1], s1=as.numeric(sqrt(group2stats[2])), 
+                      s2= as.numeric(sqrt(group1stats[2])), n1=as.numeric(n[4]), n2=as.numeric(n[7]))  
+
+meansd <- c(round(as.numeric(overallstats[1]), 2), "", round(as.numeric(sqrt(overallstats[2])), 2),
+            round(as.numeric(group2stats[1]), 2), "", round(as.numeric(sqrt(group2stats[2])), 2),
+            round(as.numeric(group1stats[1]), 2), "", round(as.numeric(sqrt(group1stats[2])), 2), pvalueMean)
+
+overallsummary <- round(as.numeric(summary(dat[,var])), 2)
+group1summary <- round(as.numeric(summary(dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),][,var])), 2)
+group2summary <- round(as.numeric(summary(dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),][,var])), 2)
+pvalueWilcox <- wilcox.test(dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),][,var], 
+                            dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),][,var])$p.value
+ 
+medianiqr <- c(overallsummary[3], "", paste(overallsummary[2], overallsummary[5], sep=","), group2summary[3],
+               "", paste(group2summary[2], group2summary[5], sep=","), group1summary[3], "",
+               paste(group1summary[2], group1summary[5], sep=","), pvalueWilcox)
+
+range <- c("", "", paste(overallsummary[1], overallsummary[6], sep=","), "", "", paste(group2summary[1],
+           group2summary[6], sep=","), "", "", paste(group1summary[1], group1summary[6], sep=","), "")
+
+x <- data.frame(all_statCol1=NA,
+  all_statCol2=NA,
+  all_statCol3=NA,
+  ctrl_statCol1=NA,
+  ctrl_statCol2=NA,
+  ctrl_statCol3=NA,
+  hiv_statCol1=NA,
+  hiv_statCol2=NA,
+  hiv_statCol3=NA,
+  p=NA)
+x[1,] <- n
+x[2,] <- cens
+x[3,] <- meansd
+x[4,] <- medianiqr
+x[5,] <- range
+
+return(x)
+}
+
+ic <- summaryStats(dat=baseData, var="ICAM1", censvar = "ICAM1cens", censdir = "right", groupVar = "ptype", 
+                   dist = "lognormal")
+
+
+```
+
+```{r filltable}
+
+biomarkers <- unique(baseTable[,1])
+for(a in biomarkers){
+  rows <- which(baseTable[,1]==a)
+  b <- paste(a,"Limit", sep="")
+  censdir <- ifelse("above" %in% baseData[,b], "right", "left")
+  data <- summaryStats(dat=baseData, var=a, censvar=paste(a, "cens", sep=""), censdir=censdir,
+                       groupVar="ptype", dist="lognormal")
+  baseTable[rows[1]:rows[length(rows)], 3:12] <- data
+}
+
+baseTable$statName <- rep(c("N Non-Missing (%)", "N Censored (% of Non-Missing)", "Mean (SD)", "Median (IQR)",
+                            "Range"), 4)
+ 
+kable(baseTable)
+```
+
