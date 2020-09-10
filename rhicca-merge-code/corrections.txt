@@ -3,7 +3,7 @@ As of 10.09.2020, these are the samples which, according to Dumisani and Dumizul
 baseline:
 RE10365 on plate 3 had ICAM1 value NA, which should be replaced with 239273.0207 
 RE1239K on plate 7 had ILb value 131828.758796162, which should be replaced with NA (machine error but no correct value known as of yet)
-Unknown sample ID on plate 3 had CD163 value 105099.2301, which should be replaced with 599.9892256
+Unknown sample ID on plate 3 had CD163 value 105099.230098485, which should be replaced with 599.9892256
 
 six months:
 RE19519 on plate 19 had CD163 value 595137.5306, which should be replaced with 1764.44671
