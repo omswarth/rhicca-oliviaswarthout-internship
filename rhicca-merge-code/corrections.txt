@@ -1,4 +1,4 @@
-As of 10.09.2020, these are the samples which, according to Dumisani and Dumizulu, had errors in their values and thus are corrected by the merging code:
+As of 10.09.2020, these are the samples which, according to Dumisani and Dumizulu, had errors in their values. These are corrected by the merging code; this file simply exists to document them
 
 baseline:
 RE10365 on plate 3 had ICAM1 value NA, which should be replaced with 239273.0207 
@@ -11,5 +11,4 @@ RE19535 on plate 19 had ICAM1 value 683763.8257, which should be replaced with 3
 RE1972X on plate 19 had ICAM1 value 6316904.318, which should be replaced with 1807796.497
 RE1907H on plate 19 had ICAM1 value 4863598.144, which should be replaced with NA (machine error but no correct value known as of yet)
 
-Furthermore, all .csv files should be re-exported from the .xlsx files as there are other errors and missing values that are on the pre-existing .csv files
-that do not appear on the .xlsx files
+Furthermore, all .csv files should be re-exported from the .xlsx files as there are other errors and missing values that are on the pre-existing .csv files that do not appear on the .xlsx files
