@@ -1,0 +1,390 @@
+---
+title: "RHICCA: An Initial Look at Relationships"
+date: "2 September 2020"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, fig.height=3, fig.width=8, message=FALSE)
+rm(list = ls())
+library(ggplot2)
+library(dplyr)
+library(arsenal)
+library(ggpubr)
+library(grid)
+library(gridExtra)
+require(scales)
+
+base <- read.csv("C:\\Users\\Olivia Swarthout\\Desktop\\BASELINE_MERGED.csv")
+load("C:/Users/Olivia Swarthout/Desktop/base6m12mDat20200730.RData")
+```
+
+
+```{r readin}
+clinicalData <- select(base6m12mDat, pid, ptype, age, age_group, gender, pwv_base, pwv_6m, pwv_12m,
+                       cimt)
+baseData <- merge(base, clinicalData, by.x = c("SampleID"), by.y = c("pid"))
+baseData$ICAM1[baseData$ICAM1==250000] <- NA
+baseData$CD163[baseData$CD163==1000] <- NA
+baseData$ILb[baseData$ILb==2.44140625] <- NA
+baseData$IL6[baseData$IL6==2.44140625] <- NA
+
+
+#reorder levels so control is not hidden by patient
+baseData$ptype <- relevel(baseData$ptype, "Patient")
+baseData$gender <- relevel(baseData$gender, "Male")
+
+#function for creating and printing two scatterplots, the first on the original scale and the second with one or both axes log transformed
+#logx and logy indicate transformation for second plot, first will never be transformed
+printPlots2 <- function(dat, x, y, groupVar, logx=FALSE, logy=FALSE, colors=c("#00AFBB", "#E7B800")){
+  #set default scales and corresponding labels
+  xaes <- dat[,x]
+  yaes <- dat[,y]
+  xlab=x
+  ylab=y
+  vp.Right<-viewport(height=unit(1, "npc"), width=unit(0.5, "npc"),just=c("left","top"),y=1, x=0.5)
+  vp.Left<-viewport(height=unit(1, "npc"), width=unit(0.5, "npc"),just=c("left","top"),y=1, x=0)
+  
+  #create and print non-log plot
+  a <- ggplot(data=dat, aes(x=xaes, y=yaes))+
+   geom_point(aes(color=dat[,groupVar], fill=dat[,groupVar]))+
+   scale_color_manual(guide=FALSE, values = colors) +
+   scale_fill_manual(" ",values = colors, guide=FALSE)+
+   xlab(xlab)+
+   ylab(ylab)+
+  geom_smooth()
+  
+  print(a, vp=vp.Left)
+  
+  #change axes and labels for second plot
+  if(logx){
+  xaes <- log(dat[,x])
+  xlab <- paste("log", x)
+  }
+  if(logy){
+  yaes <- log(dat[,y])
+  ylab <- paste("log", y)
+  }
+  
+  #create and print log transformed plot
+  b <- ggplot(data=dat, aes(x=xaes, y=yaes))+
+  geom_point(aes(color=dat[,groupVar], fill=dat[,groupVar]))+
+   scale_color_manual(guide=FALSE, values = colors) +
+   scale_fill_manual(" ",values = colors, guide=FALSE)+
+   xlab(xlab)+
+   ylab(ylab)+
+  geom_smooth(span=0.5)
+  
+  print(b, vp=vp.Right)
+  
+}
+
+printPlots <- function(a, b){
+  
+vp.Right<-viewport(height=unit(1, "npc"), width=unit(0.5, "npc"),just=c("left","top"),y=1, x=0.5)
+vp.Left<-viewport(height=unit(1, "npc"), width=unit(0.5, "npc"),just=c("left","top"),y=1, x=0)
+
+print(a, vp=vp.Left)
+print(b, vp=vp.Right)
+}
+
+options(scipen=999)
+
+baseData$pwvDiff12 <- baseData$pwv_12m - baseData$pwv_base
+baseData$pwvDiff6 <- baseData$pwv_6m - baseData$pwv_base
+
+
+```
+
+## A look at distrubutions and transformations
+
+ILb has been omitted from this document for the time being, as the high rate of censoring (~66%) makes the data less useful for discussing relationships. The remaining three biomarkers (ICAM1, CD163, IL6) are used on their original scale as well as log-transformed. All three show very right-skewed distributions, making log transformations necessary for effective visual analysis. The original distribtutions and the effects of the transformation are shown below:
+
+```{r biomarkers}
+icam <- data.frame(name="ICAM1", value=baseData$ICAM1)
+cd163 <- data.frame(name="CD163", value=baseData$CD163)
+il6 <- data.frame(name="IL6", value=baseData$IL6)
+all <- bind_rows(icam, cd163, il6)
+
+ggplot(data=all, aes(x=value))+
+  geom_histogram(bins=100)+
+      theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))+
+  facet_wrap(~ name, scale="free") + theme(panel.spacing = unit(2, "lines"))
+
+ggplot(data=all, aes(x=log(value)))+
+  geom_histogram()+
+      theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))+
+  facet_wrap(~ name, scale="free") + theme(panel.spacing = unit(2, "lines"))
+
+```
+
+\newpage
+PWV for all three timepoints as well as the 6- and 12-month change in PWV follow a relatively symmetric distribution and thus have not been transformed. cIMT is somewhat right-skewed, but a log transformation has little effect, and the skew appears to be not so severe as to hinder visual interpretation:
+
+```{r graphs}
+base <- data.frame(name="pwv baseline", value=baseData$pwv_base)
+six <- data.frame(name="pwv six month", value=baseData$pwv_6m)
+twelve <- data.frame(name="pwv twelve month", value=baseData$pwv_12m)
+pwv <- bind_rows(base, six, twelve)
+
+ggplot(data=pwv, aes(x=value))+
+  geom_histogram(bins=20)+
+      theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))+
+  scale_y_continuous(limits = c(0,150))+
+  facet_wrap(~ name, scale="free") + theme(panel.spacing = unit(2, "lines"))
+```
+
+
+```{r graphs2}
+g <- ggplot(data=baseData, aes(x=pwvDiff6))+
+  geom_histogram(bins=20)+
+      theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))
+
+h <- ggplot(data=baseData, aes(x=pwvDiff12))+
+  geom_histogram(bins=20)+
+      theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))
+
+printPlots(g,h)
+```
+
+```{r cimt}
+
+a <- ggplot(data=baseData, aes(x=cimt))+
+  geom_histogram(bins=30)+
+  theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))
+
+b <- ggplot(data=baseData, aes(log(cimt)))+
+  geom_histogram(bins=30)+
+  theme(panel.grid = element_line(linetype = "dotted", color = "grey"), 
+          strip.background = element_rect(fill="white"),
+          panel.background = element_rect(fill = "white"),
+          legend.key.size = unit(0.03, "npc"))
+
+printPlots(a,b)
+```
+
+
+
+\newpage
+
+## 1. Relationships between biomarkers
+These plots investigate potential relationships among biomarkers as well as between the biomarkers and the primary outcome variables, pulse wave velocity (PWV) and carotid intimal medial thickness (cIMT). ART and control patients are represented by blue and orange points, respectively.
+
+### Baseline ICAM1 vs CD163
+Though when plotted on their original scales, there is no clear relationship, log transforming both variables shows us that they are likely at least somewhat correlated, as there is a clear positive trend in the plot. 
+
+```{r icam cd}
+
+printPlots2(baseData, "ICAM1", "CD163", logx = TRUE, logy = TRUE, groupVar = "ptype")
+
+```
+
+### Baseline ICAM1 vs IL6
+Here, the scatterplot appears random even after a log transformation, suggesting that there is no significant relationship between ICAM1 and IL6
+
+```{r icam il6}
+
+printPlots2(baseData, "ICAM1", "IL6", logx = TRUE, logy = TRUE, groupVar = "ptype")
+
+```
+\newpage
+
+
+### Baseline CD163 vs IL6
+A number of extreme values cause the original scale scatterplot to be very closely clustered, making it difficult to discern any trends. Log transforming both variables reduces the spread, showing us that there may be at best a very weak relationship between these two biomarkers, although the plot looks mostly random.
+
+```{r cd163 il6}
+
+printPlots2(baseData, "CD163", "IL6", logx = TRUE, logy = TRUE, groupVar = "ptype")
+
+```
+
+\newpage
+
+## 2. Relationships between biomarkers and primary outcome variables
+
+The graphs below show the biomarkers plotted against cIMT and PWV at baseline, six months, and 12 months as well as the 12-month change in PWV. PWV is fairly symmetrically distributed with little spread at all three timepoints, as is the 12-month increase, and so even when the biomarker is log transformed, it has been left on its original scale. cIMT, however, is fairly right-skewed, and has been transformed when necessary
+
+### a. Baseline ICAM1 vs PWV and cIMT
+We see in the plots that, even after a log transformation of the x axis, there is little evidence of a clear relationship.There may be a slight positive relationship between ICAM1 and 12 month PWV as well as the overall change in PWV, but the graphs do not provide strong evidence of this. 
+
+### Baseline PWV
+
+```{r icam basepwv}
+
+printPlots2(baseData, "ICAM1", "pwv_base", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 6 Month PWV
+
+```{r icam 6pwv}
+
+printPlots2(baseData, "ICAM1", "pwv_6m", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 12 Month PWV
+
+```{r icam 12pwv}
+
+printPlots2(baseData, "ICAM1", "pwv_12m", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 6-Month Change in PWV
+
+```{r icam diffpwv6}
+
+printPlots2(baseData, "ICAM1", "pwvDiff6", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 12-Month Change in PWV
+
+```{r icam diffpwv12}
+
+printPlots2(baseData, "ICAM1", "pwvDiff12", logx = TRUE, groupVar = "ptype")
+
+```
+
+\newpage
+
+### cIMT
+
+The scatterplots below show the data on its original scale as well as a log transformation of both axes, as cIMT is somewhat right-skewed. There does not appear to be a  linear relationship, although it does seem that most of the lowest cIMT values are found in the middle of the graph, with lower and higher ICAM1 values tending to be associated 
+
+```{r icam cimt}
+
+printPlots2(baseData, "ICAM1", "cimt", logx = TRUE, groupVar = "ptype")
+
+```
+
+\newpage
+
+### b. Baseline CD163 vs PWV and cIMT
+
+The following graphs plot baseline CD163 against PWV at baseline, six months, and 12 months as well as the 12-month change in PWV. Once again we see little evidence of relationships in the data, although there may be a slightly positive correlation in the 12 month and 12-month increase plots, where we see that most of the data is clustered around the centre of the graph, but patients with low CD163 tend to have low PWV as well, and high CD163 patients tend to have high PWV.
+
+### Baseline PWV
+
+```{r cd163 basepwv}
+
+printPlots2(baseData, "CD163", "pwv_base", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 6 Month PWV
+
+```{r cd163 6pwv}
+
+printPlots2(baseData, "CD163", "pwv_6m", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 12 Month PWV
+
+```{r cd163 12pwv}
+
+printPlots2(baseData, "CD163", "pwv_12m", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 6-Month Change in PWV
+
+```{r cd163 pwvdiff6}
+
+printPlots2(baseData, "CD163", "pwvDiff6", logx = TRUE, groupVar = "ptype")
+
+```
+
+
+### 12-Month Change in PWV
+
+```{r cd163 pwvdiff12}
+
+printPlots2(baseData, "CD163", "pwvDiff12", logx = TRUE, groupVar = "ptype")
+
+```
+
+\newpage
+
+### cIMT
+
+The plot looks fairly random despite the log transformation, giving little evidence of a relationship.
+
+```{r cd163 cimt}
+
+printPlots2(baseData, "CD163", "cimt", logx = TRUE, groupVar = "ptype")
+
+```
+\newpage
+
+### c. Baseline IL6 vs PWV and cIMT
+
+We see in the plots that, even after a log transformation of the x axis, there is little evidence of a clear relationship between IL6 and PWV. All PWV plots look very random, with no sign of correlation.
+
+### Baseline PWV
+
+```{r il6 basepwv}
+
+printPlots2(baseData, "IL6", "pwv_base", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 6 Month PWV
+
+```{r il6 6pwv}
+
+printPlots2(baseData, "IL6", "pwv_6m", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 12 Month PWV
+
+```{r il6 12pwv}
+
+printPlots2(baseData, "IL6", "pwv_12m", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 6-Month Change in PWV
+
+```{r il6 pwvdiff6}
+
+printPlots2(baseData, "IL6", "pwvDiff6", logx = TRUE, groupVar = "ptype")
+
+```
+
+### 12-Month Change in PWV
+
+```{r il6 pwvdiff12}
+
+printPlots2(baseData, "IL6", "pwvDiff12", logx = TRUE, groupVar = "ptype")
+
+```
+
+### cIMT
+
+```{r il6 cimt}
+
+printPlots2(baseData, "IL6", "cimt", logx = TRUE, groupVar = "ptype")
+
+```
