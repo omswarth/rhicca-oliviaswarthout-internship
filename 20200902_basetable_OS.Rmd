@@ -1,0 +1,274 @@
+---
+title: "RHICCA Tables"
+date: 
+output: 
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Arial
+geometry: margin=0.5in
+
+---
+
+ 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+rm(list = ls())
+
+library(EnvStats)
+library(knitr)
+library(dplyr)
+library(ggpubr)
+library(tinytex)
+library(mixdist)
+library(survival)
+library(broom)
+library(scales)
+library(lognorm)
+library(kableExtra)
+
+options(scipen=999)
+#get relevant columns from clinical data, filter out base data that can't be matched with clinical data and vice versa
+base <- read.csv("C:\\Users\\Olivia Swarthout\\Desktop\\FOLLOWUP_6MONTHS_MERGED.csv")
+load("C:/Users/Olivia Swarthout/Desktop/base6m12mDat20200730.RData")
+clinicalData <- select(base6m12mDat, pid, ptype, age, age_group, gender, pwv_base, pwv_6m, pwv_12m,cimt)
+baseData <- merge(base, clinicalData, by.x = c("SampleID"), by.y = c("pid"))
+
+#refactor ptype to make sure everything is labelled correctly
+baseData$ptype <- factor(baseData$ptype, levels = c("Patient", "Control"))
+
+
+
+#censreg needs a boolean vector to determine censoring
+baseData$ICAM1cens <- ifelse(is.na(baseData$ICAM1Limit), FALSE, TRUE)
+baseData$CD163cens <- ifelse(is.na(baseData$CD163Limit), FALSE, TRUE)
+baseData$ILbcens <- ifelse(is.na(baseData$ILbLimit),FALSE, TRUE)
+baseData$IL6cens <- ifelse(is.na(baseData$IL6Limit),FALSE, TRUE)
+#remove error/outlier
+
+```
+
+```{r functions, include=TRUE}
+#create empty table to populate
+baseTable<-data.frame(
+  varName=c(rep("ICAM1",5), rep("CD163",5), rep("ILb",5), rep("IL6",5)),
+  statName=NA,
+  all_statCol1=NA,
+  all_statCol2=NA,
+  all_statCol3=NA,
+  ctrl_statCol1=NA,
+  ctrl_statCol2=NA,
+  ctrl_statCol3=NA,
+  hiv_statCol1=NA,
+  hiv_statCol2=NA,
+  hiv_statCol3=NA,
+  p=NA,
+stringsAsFactors=F)
+
+#2 sample t test function
+t.test2 <- function(m1,m2,s1,s2,n1,n2,equal.variance=FALSE)
+{
+  if( equal.variance==FALSE ) 
+  {
+    se <- sqrt( (s1^2/n1) + (s2^2/n2) )
+    # welch-satterthwaite df
+    df <- ( (s1^2/n1 + s2^2/n2)^2 )/( (s1^2/n1)^2/(n1-1) + (s2^2/n2)^2/(n2-1) )
+  } else
+  {
+    # pooled standard deviation, scaled by the sample sizes
+    se <- sqrt( (1/n1 + 1/n2) * ((n1-1)*s1^2 + (n2-1)*s2^2)/(n1+n2-2) ) 
+    df <- n1+n2-2
+  }      
+  t <- (m1-m2)/se 
+  dat <- 2*pt(-abs(t),df)
+  return(dat) 
+}
+
+#summary statistics function, takes a biomarker as argument and generates 5 rows of data split by groupvar:
+#1. n non missing (% non missing)
+#2. n censored (% censored, this is calculated using number of non-missing values as total)
+#3. 
+
+
+
+summaryStats <- function(dat,var,censvar,censdir,groupVar){
+  #split into groups based on groupvar 
+  group1data <- dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),]
+  group2data <- dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),]
+
+  #find n and n censored for each group
+  group1num <- nrow(group1data)
+  group2num <- nrow(group2data)
+  group1cens <- sum(group1data[,censvar]==TRUE)
+  group2cens <- sum(group2data[,censvar]==TRUE)
+  
+  overall <- enparCensored(dat[,var], dat[,censvar], censoring.side=censdir)
+  
+  #generate kaplan-meier summary for each group
+  #enparCensored doesn't work if 0 are censored so find basic mean and sd if this is the case
+  if(group1cens==0){
+    group1mean <- mean(log(group1data[,var]), na.rm=TRUE)
+    group1sd <- sd(log(group1data[,var]), na.rm=TRUE)
+    group1error <- qt(0.975,df=group1num-1)*group1sd/sqrt(group1num)
+    group1int <- paste(group1mean-group1error, group1mean+group1error, sep = "")
+  }else{
+    group1 <- enparCensored(log(group1data[,var]), group1data[,censvar], censoring.side=censdir, ci=TRUE)
+    group1mean <- exp(as.numeric(group1$parameters[1]))
+    group1int <- paste(round(exp(as.numeric(group1$interval$limits[1])), 2),
+                       round(exp(as.numeric(group1$interval$limits[2])), 2), sep = ",")
+  }
+    if(group2cens==0){
+    group2mean <- mean(log(group2data[,var]), na.rm=TRUE)
+    group2sd <- sd(log(group2data[,var]), na.rm=TRUE)
+    group2error <- qt(0.975,df=group2num-1)*group2sd/sqrt(group2num)
+    group2int <- paste(exp(group2mean-group2error), exp(group2mean+group2error), sep = "")
+  }else{
+    group2 <- enparCensored(log(group2data[,var]), group2data[,censvar], censoring.side=censdir, ci=TRUE)
+    group2mean <- exp(as.numeric(group2$parameters[1]))
+    group2int <- paste(round(exp(as.numeric(group2$interval$limits[1])), 2),
+                       round(exp(as.numeric(group2$interval$limits[2])), 2), sep = ",")
+  
+  }
+  
+
+#create n row  
+n <- c(overall$sample.size, 
+       " ",
+       percent(overall$sample.size/948), 
+       group2num,
+       "",
+       percent(group2num/sum(base6m12mDat[,groupVar]==levels(dat[,groupVar])[2])),
+       group1num,
+       "",
+       percent(group1num/sum(base6m12mDat[,groupVar]==levels(dat[,groupVar])[1])), 
+       "")
+
+#create n censored row
+cens <- c(sum(dat[,censvar]==TRUE),
+          "",
+          percent(sum(dat[,censvar]==TRUE)/overall$sample.size), 
+          group2cens, 
+          "",
+          percent(group2cens/group2num), 
+          group1cens, 
+          "", 
+          percent(group1cens/group1num), 
+          "")
+
+
+
+#create meansd row
+meansd <- c(round(as.numeric(overall[["parameters"]][1]), 2), 
+            "", 
+            round(as.numeric(overall[["parameters"]][2]), 2),
+            round(group2mean, 2), 
+            "", 
+            group2int,
+            round(group1mean, 2), 
+            "", 
+            group1int, 
+            "")
+
+#find summary statistics to use in finding median and iqr and wilcox.test
+overallsummary <- round(as.numeric(summary(dat[,var])), 2)
+group1summary <- round(as.numeric(summary(dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),][,var])), 2)
+group2summary <- round(as.numeric(summary(dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),][,var])), 2)
+
+#rank sum wilcoxon test
+pvalueWilcox <- wilcox.test(dat[which(dat[,groupVar]==levels(dat[,groupVar])[1]),][,var], 
+                            dat[which(dat[,groupVar]==levels(dat[,groupVar])[2]),][,var])$p.value
+pvalueWilcox <- ifelse((pvalueWilcox >= 0.0001), round(pvalueWilcox, 4), "<0.0001")
+
+#create median/iqr and range rows
+medianiqr <- c(overallsummary[3], 
+               "", 
+               paste(overallsummary[2], overallsummary[5], sep=","), 
+               group2summary[3],
+               "", 
+               paste(group2summary[2], group2summary[5], sep=","), 
+               group1summary[3], 
+               "",
+               paste(group1summary[2], group1summary[5], sep=","), 
+               pvalueWilcox)
+
+range <- c("", 
+           "", 
+           paste(overallsummary[1], overallsummary[6], sep=","), 
+           "", 
+           "", 
+           paste(group2summary[1], group2summary[6], sep=","),
+           "", 
+           "", 
+           paste(group1summary[1], group1summary[6], sep=","),
+           "")
+
+#create smaller dataframe to return, contains only values from one biomarker
+x <- data.frame(all_statCol1=NA,
+  all_statCol2=NA,
+  all_statCol3=NA,
+  ctrl_statCol1=NA,
+  ctrl_statCol2=NA,
+  ctrl_statCol3=NA,
+  hiv_statCol1=NA,
+  hiv_statCol2=NA,
+  hiv_statCol3=NA,
+  p=NA)
+x[1,] <- n
+x[2,] <- cens
+x[3,] <- meansd
+x[4,] <- medianiqr
+x[5,] <- range
+
+return(x)
+}
+
+
+```
+
+Six Months 
+
+```{r filltable}
+
+biomarkers <- unique(baseTable[,1])
+#iterate through all biomarkers
+for(a in biomarkers){
+  
+  #select rows in basetable to paste data into
+  rows <- which(baseTable[,1]==a)
+  
+  #find direction data is censored from (right or left)
+  b <- paste(a,"Limit", sep="")
+  censdir <- ifelse("above" %in% baseData[,b], "right", "left")
+  data <- summaryStats(dat=baseData, var=a, censvar=paste(a, "cens", sep=""), censdir=censdir,
+                       groupVar="ptype")
+  #paste in data
+  baseTable[rows[1]:rows[length(rows)], 3:12] <- data
+}
+
+baseTable$statName <- rep(c("N Non-Missing (%)", "N Censored (% of Non-Missing)", "Mean (SD)", "Median (IQR)",
+                            "Range"), 4)
+ 
+
+
+```
+
+
+
+\renewcommand{\arraystretch}{1.5}
+
+```{r styletable}
+
+baseTable %>%
+kable(booktabs=T, col.names=NULL, align = c("l", "l", rep("r", 10)))%>%
+kable_styling(latex_options = c("scale_down"))%>%
+add_header_above(c(paste0("Biomarker", footnote_marker_symbol(2, double_escape = TRUE)),"Summary Measure",
+                   "All" = 3,"Control" = 3,"ART Patient" = 3,paste0("p-value",  
+                    footnote_marker_symbol(1, double_escape = TRUE))), escape = F) %>%
+column_spec(c(4, 7, 10), width = "1em")%>%
+column_spec(1, bold = TRUE)%>%
+collapse_rows(1, latex_hline = "major", valign = "top")%>%
+footnote(symbol = c("p-values for comparing means are from a two-sample t-test and for comparing medians from a two-sample Wilcoxon rank-sum test", "mean and sd of censored data is calculated with the enparCensored function from the EnvStats package"))
+
+
+
+```
